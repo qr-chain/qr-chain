@@ -3,52 +3,142 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Access Denied</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<title>QR_CHAIN.exe</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   :root{
-    --bg:#050807; --bg2:#0b1210; --line:#241c1c;
-    --danger:#ff5c5c; --text-dim:#8a6f6f;
+    --bg:#050807; --bg2:#0b1210; --line:#1c2b24;
+    --green:#39ff88; --danger:#ff5c5c; --text-dim:#8a6f6f;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:
-      radial-gradient(ellipse at top, rgba(255,92,92,0.06), transparent 60%),
-      var(--bg);
-    color:var(--danger);
+    background:radial-gradient(ellipse at top, rgba(57,255,136,0.06), transparent 60%), var(--bg);
+    color:var(--green);
     font-family:'JetBrains Mono', monospace;
     min-height:100vh;
     display:flex; align-items:center; justify-content:center;
     padding:24px;
   }
   .crt{
-    position:relative;
-    border:1px solid var(--line);
+    position:relative; border:1px solid var(--line);
     background:linear-gradient(180deg, var(--bg2), var(--bg));
-    border-radius:4px;
-    padding:36px 30px;
-    max-width:420px; width:100%;
-    text-align:center;
-    box-shadow:0 20px 60px -20px rgba(0,0,0,0.8);
+    border-radius:4px; padding:36px 30px; max-width:420px; width:100%;
+    text-align:center; box-shadow:0 20px 60px -20px rgba(0,0,0,0.8);
     overflow:hidden;
-  }
-  .crt::before{
-    content:""; position:absolute; inset:0;
-    background:repeating-linear-gradient(to bottom,
-      rgba(255,92,92,0.03) 0px, rgba(255,92,92,0.03) 1px,
-      transparent 1px, transparent 3px);
-    pointer-events:none;
   }
   .code{ font-size:11px; letter-spacing:0.2em; color:var(--text-dim); margin-bottom:14px; }
   h1{ font-size:20px; margin:0; letter-spacing:0.03em; }
+  .invalid{ color:var(--danger); }
+  .invalid h1{ color:var(--danger); }
+  .qr-only{
+    background:#eafff2; padding:20px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+  }
 </style>
 </head>
 <body>
-  <div class="crt">
-    <div class="code">ERR_403</div>
-    <h1>잘못된 접근입니다</h1>
-  </div>
+<div id="app"></div>
+
+<script>
+const OBFUSCATION_KEY = 'qrchain-v1';
+
+function xor(str, key){
+  let out = '';
+  for(let i=0;i<str.length;i++){
+    out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+  }
+  return out;
+}
+function b64urlDecode(str){
+  let s = str.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length % 4) s += '=';
+  return decodeURIComponent(escape(atob(s)));
+}
+function b64urlEncode(str){
+  const utf8 = unescape(encodeURIComponent(str));
+  return btoa(utf8).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function packToken(step, n, t){
+  const payload = JSON.stringify([step, n, t]);
+  return b64urlEncode(xor(payload, OBFUSCATION_KEY));
+}
+// Throws on any malformed/tampered token — caller decides what to do.
+function unpackToken(token){
+  const payload = xor(b64urlDecode(token), OBFUSCATION_KEY);
+  const parsed = JSON.parse(payload);
+  if(!Array.isArray(parsed) || parsed.length !== 3) throw new Error('shape');
+  const [step, n, t] = parsed;
+  if(!Number.isInteger(step) || step < 0) throw new Error('step');
+  if(!Number.isInteger(n) || n < 1) throw new Error('n');
+  if(typeof t !== 'string' || t.length === 0) throw new Error('t');
+  if(step > n) throw new Error('range');
+  return { step, n, t };
+}
+
+const app = document.getElementById('app');
+
+function rootUrl(){
+  const u = new URL(window.location.href);
+  u.pathname = '/';
+  u.search = '';
+  u.hash = '';
+  return u.toString();
+}
+function buildUrl(nextStep, t, n){
+  const u = new URL(rootUrl());
+  u.searchParams.set('x', packToken(nextStep, n, t));
+  return u.toString();
+}
+
+function renderInvalid(){
+  app.innerHTML = `
+    <div class="crt">
+      <div class="invalid">
+        <div class="code">ERR_403</div>
+        <h1>잘못된 접근입니다</h1>
+      </div>
+    </div>
+  `;
+}
+function renderQR(step, total, target){
+  const nextUrl = buildUrl(step+1, target, total);
+  app.innerHTML = `<div class="qr-only"><div id="qr"></div></div>`;
+  new QRCode(document.getElementById('qr'), {
+    text: nextUrl, width:220, height:220,
+    colorDark:"#04120a", colorLight:"#eafff2"
+  });
+}
+function renderRedirect(target){
+  app.innerHTML = `
+    <div class="crt">
+      <div class="code">ERR_403</div>
+      <h1 style="color:var(--green)">&hellip;</h1>
+    </div>
+  `;
+  setTimeout(()=>{ window.location.href = target; }, 600);
+}
+
+(function dispatch(){
+  const params = new URLSearchParams(window.location.search);
+  const rawToken = params.get('x');
+
+  if(!rawToken){ renderInvalid(); return; }
+
+  let parsed;
+  try{
+    parsed = unpackToken(rawToken);
+  }catch(e){
+    renderInvalid();
+    return;
+  }
+
+  if(parsed.step < parsed.n){
+    renderQR(parsed.step, parsed.n, parsed.t);
+  } else {
+    renderRedirect(parsed.t);
+  }
+})();
+</script>
 </body>
 </html>
