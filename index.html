@@ -131,6 +131,10 @@
     color:var(--text-dim); box-shadow:none; font-weight:600;
   }
   .copybtn:hover{ transform:none; box-shadow:none; border-color:var(--green-dim); color:var(--green);}
+  .qr-only{
+    background:#eafff2; padding:20px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+  }
 </style>
 </head>
 <body>
@@ -273,13 +277,7 @@ function renderForm(){
 
 function renderQR(){
   const nextUrl = buildUrl(step+1, target, total);
-  shell(`
-    <h1 class="glitch">디코딩 중<span class="bracket">...</span></h1>
-    ${progressBar(step, total)}
-    <p class="status">단계 <b>${step}</b> / ${total} 통과. 다음 QR을 스캔하세요.</p>
-    <div class="qr-wrap"><div id="qr"></div></div>
-    <p class="hint center">남은 단계: ${total - step}</p>
-  `, `STEP ${step}`);
+  app.innerHTML = `<div class="qr-only"><div id="qr"></div></div>`;
   new QRCode(document.getElementById('qr'), {
     text: nextUrl, width:220, height:220,
     colorDark:"#04120a", colorLight:"#eafff2"
