@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Normal_QR</title>
+<title>QR_CHAIN.exe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -164,45 +164,22 @@ function packToken(step, n, t){
   return b64urlEncode(xor(payload, OBFUSCATION_KEY));
 }
 
-// Throws if the token is malformed in any way — caller decides what to do.
-function unpackToken(token){
-  const payload = xor(b64urlDecode(token), OBFUSCATION_KEY);
-  const parsed = JSON.parse(payload);
-  if(!Array.isArray(parsed) || parsed.length !== 3){
-    throw new Error('malformed token shape');
-  }
-  const [step, n, t] = parsed;
-  if(!Number.isInteger(step) || step < 0) throw new Error('bad step');
-  if(!Number.isInteger(n) || n < 1) throw new Error('bad n');
-  if(typeof t !== 'string' || t.length === 0) throw new Error('bad target');
-  if(step > n) throw new Error('step out of range');
-  return { step, n, t };
-}
-
 const app = document.getElementById('app');
 
-function baseUrl(){
+// Links always point to the domain root (where the actual QR/redirect chain lives),
+// never to /make/ — /make/ is only for creating a new chain.
+function rootUrl(){
   const u = new URL(window.location.href);
+  u.pathname = '/';
   u.search = '';
   u.hash = '';
   return u.toString();
 }
 
 function buildUrl(nextStep, t, n){
-  const u = new URL(baseUrl());
+  const u = new URL(rootUrl());
   u.searchParams.set('x', packToken(nextStep, n, t));
   return u.toString();
-}
-
-function renderInvalid(){
-  app.innerHTML = `
-    <div class="crt">
-      <div class="invalid">
-        <div class="code">ERR_403</div>
-        <h1>잘못된 접근입니다</h1>
-      </div>
-    </div>
-  `;
 }
 
 function shell(inner, badge){
@@ -217,30 +194,7 @@ function shell(inner, badge){
   `;
 }
 
-(function dispatch(){
-  const params = new URLSearchParams(window.location.search);
-  const rawToken = params.get('x');
-
-  if(!rawToken){
-    renderForm();
-    return;
-  }
-
-  let parsed;
-  try{
-    parsed = unpackToken(rawToken);
-  }catch(e){
-    renderInvalid();
-    return;
-  }
-
-  const { step, n: total, t: target } = parsed;
-  if(step < total){
-    renderQR(step, total, target);
-  } else {
-    renderRedirect(total, target);
-  }
-})();
+renderForm();
 
 function renderForm(){
   shell(`
@@ -288,22 +242,6 @@ function renderForm(){
   };
 }
 
-function renderQR(step, total, target){
-  const nextUrl = buildUrl(step+1, target, total);
-  app.innerHTML = `<div class="qr-only"><div id="qr"></div></div>`;
-  new QRCode(document.getElementById('qr'), {
-    text: nextUrl, width:220, height:220,
-    colorDark:"#04120a", colorLight:"#eafff2"
-  });
-}
-
-function renderRedirect(total, target){
-  shell(`
-    <h1 class="glitch">접속 승인됨</h1>
-    <div class="center" style="margin:16px 0; font-size:32px;">🔓</div>
-  `, `STEP ${total}`);
-  setTimeout(()=>{ window.location.href = target; }, 1200);
-}
 </script>
 </body>
 </html>
